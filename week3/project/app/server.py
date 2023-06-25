@@ -1,3 +1,6 @@
+from datetime import datetime
+import time
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from loguru import logger
@@ -25,26 +28,17 @@ app = FastAPI()
 
 @app.on_event("startup")
 def startup_event():
-    """
-    [TO BE IMPLEMENTED]
-    1. Initialize an instance of `NewsCategoryClassifier`.
-    2. Load the serialized trained model parameters (pointed to by `MODEL_PATH`) into the NewsCategoryClassifier you initialized.
-    3. Open an output file to write logs, at the destimation specififed by `LOGS_OUTPUT_PATH`
-        
-    Access to the model instance and log file will be needed in /predict endpoint, make sure you
-    store them as global variables
-    """
+    global clf
+    clf = NewsCategoryClassifier()
+    clf.load(MODEL_PATH)
+    logger.add(LOGS_OUTPUT_PATH)
     logger.info("Setup completed")
 
 
 @app.on_event("shutdown")
 def shutdown_event():
     # clean up
-    """
-    [TO BE IMPLEMENTED]
-    1. Make sure to flush the log file and close any file pointers to avoid corruption
-    2. Any other cleanups
-    """
+    logger.remove()
     logger.info("Shutting down application")
 
 
@@ -53,19 +47,21 @@ def predict(request: PredictRequest):
     # get model prediction for the input request
     # construct the data to be logged
     # construct response
-    """
-    [TO BE IMPLEMENTED]
-    1. run model inference and get model predictions for model inputs specified in `request`
-    2. Log the following data to the log file (the data should be logged to the file that was opened in `startup_event`)
-    {
-        'timestamp': <YYYY:MM:DD HH:MM:SS> format, when the request was received,
-        'request': dictionary representation of the input request,
-        'prediction': dictionary representation of the response,
-        'latency': time it took to serve the request, in millisec
+    start_time = time.time()
+    probabilities = clf.predict_proba(request.description)
+    label = clf.predict_label(request.description)
+    end_time = time.time()
+    latency = int((end_time - start_time) * 1000)  # in milliseconds
+
+    log_data = {
+        "timestamp": datetime.now().strftime("%Y:%m:%d %H:%M:%S"),
+        "request": request,
+        "prediction": {'scores': probabilities, 'label': label},
+        "latency": latency
     }
-    3. Construct an instance of `PredictResponse` and return
-    """
-    response = PredictResponse(scores={"label1": 0.9, "label2": 0.1}, label="label1")
+    logger.info(log_data)
+    
+    response = PredictResponse(scores=probabilities, label=label)
     return response
 
 
